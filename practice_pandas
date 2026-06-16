@@ -1,0 +1,78 @@
+import pandas as pd 
+df = pd.read_csv("C:/Users/HP/Desktop/quikr_car.csv")
+
+
+#print(df.head())
+
+#print(df.head(2))
+
+#print(df.tail())           
+
+#print(df.info())
+
+#print(df.columns)
+
+#print(df.describe())
+
+
+#print(df.isnull().sum())
+car=df.copy()
+#print(car.columns)
+
+
+#cleaning year
+
+#print(car["year"].unique())
+
+car=car[car["year"].str.isnumeric()]
+#print(car["year"].unique())
+car["year"]=car["year"].astype(int)
+
+#print(car.columns)
+
+#cleaning price
+
+car=car[car["Price"]!="Ask For Price"]
+car["Price"]=car["Price"].str.replace(",","",regex=False)
+car["Price"]=car["Price"].astype(int)
+
+#print(car.columns)
+
+
+#cleaing kms_driven
+
+
+car["kms_driven"] = car["kms_driven"].str.replace("kms", "", regex=False)
+car["kms_driven"] = car["kms_driven"].str.replace(",", "", regex=False)
+car["kms_driven"] = car["kms_driven"].str.strip()
+
+car = car[car["kms_driven"].str.isnumeric()]
+car["kms_driven"] = car["kms_driven"].astype(int)
+#print(car.columns)
+print(car.isnull().sum())
+#print(car.duplicated().sum())
+car=car.dropna(subset=["fuel_type"])
+car=car.drop_duplicates()
+car=car.reset_index(drop=True)
+#print(car.shape)
+#print(car.dtypes)
+#print(car.head())
+'''
+print(car["Price"].mean())
+print(car["Price"].max())
+print(car["Price"].min())
+print(car[car["Price"]>500000])
+'''
+
+#print(car[car["fuel_type"]=="Diesel"])
+
+#print(car["company"].value_counts())
+car=car.sort_values("Price")
+#print(car.head())
+
+car["Age"]=2026-car["year"]
+#print(car[car["Age"]>20])
+#print(car.groupby("company")["Price"].mean())
+
+print(car["fuel_type"].mode())
+#car.to_csv("cleaned_car.csv" , index=False)
