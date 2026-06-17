@@ -1,0 +1,125 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import(
+    train_test_split,
+    GridSearchCV
+    
+)
+from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer 
+from sklearn.metrics import(
+    accuracy_score,
+    f1_score,
+    recall_score,
+    precision_score,
+    classification_report,
+    confusion_matrix
+
+)
+
+df=pd.read_csv("C:/Users/HP/Desktop/customer_churn_dataset-testing-master.csv")
+#print(df.head(2))
+#print(df.isnull().sum())
+#print(df.duplicated().sum())
+
+X=df.drop(["CustomerID","Churn"],axis=1)
+y=df["Churn"]
+
+categorical_features = X.select_dtypes(include=["object"]).columns
+numeric_features = X.select_dtypes(exclude=["object"]).columns
+
+print("Categorical Columns:")
+print(categorical_features)
+
+print("Numerical Columns:")
+print(numeric_features)
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        (
+            "cat",
+            OneHotEncoder(handle_unknown="ignore"),
+            categorical_features
+        ),
+        (
+            "num",
+            "passthrough",
+            numeric_features
+        )
+    ]
+)
+
+decision_tree=DecisionTreeClassifier(
+
+    random_state=42
+)
+
+pipeline=Pipeline(
+    steps=[
+        ("preprocessing",preprocessor),
+        ("model",decision_tree)
+    ]
+)
+
+X_train,X_test,y_train,y_test=train_test_split(
+    X,
+    y,
+
+    random_state=42,
+    test_size=0.20,
+    stratify=y
+)
+
+param_grid = {
+    "model__criterion": ["gini", "entropy"],
+
+    "model__max_depth": [3, 5, 10, 15, None],
+
+    "model__min_samples_split": [2, 5, 10],
+
+    "model__min_samples_leaf": [1, 2, 4]
+}
+
+grid_search=GridSearchCV(
+    estimator=pipeline,
+    param_grid=param_grid,
+    cv=5,
+    scoring="f1",
+    n_jobs=1
+)
+grid_search.fit(X_train, y_train)
+
+print("Best Parameters:")
+print(grid_search.best_params_)
+
+print("Best Cross Validation F1 Score:")
+print(grid_search.best_score_)
+
+best_model=grid_search.best_estimator_
+y_pred=best_model.predict(X_test)
+
+
+
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+
+print(df.columns.tolist())
+print(df.corr(numeric_only=True)["Churn"].sort_values(ascending=False))
+'''
+print("\nModel Evaluation Results")
+print("------------------------")
+print("Accuracy :", accuracy)
+print("Precision:", precision)
+print("Recall   :", recall)
+print("F1 Score :", f1)
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+'''
