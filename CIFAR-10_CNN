@@ -1,10 +1,17 @@
 import pickle
 import numpy as np
 import tensorflow as tf
-from keras import layers, models
-from keras.utils import to_categorical
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow import keras
 import matplotlib.pyplot as plt
+
+layers = keras.layers
+models = keras.models
+regularizers = keras.regularizers
+to_categorical = keras.utils.to_categorical
+ModelCheckpoint = keras.callbacks.ModelCheckpoint
+
+print("TensorFlow:", tf.__version__)
+print("GPU:", tf.config.list_physical_devices("GPU"))
 
 def load_batch(filename):
     with open(filename, "rb") as f:
@@ -18,7 +25,7 @@ def load_batch(filename):
 
     return images, labels
 
-path = r"C:/Users/HP/Desktop/cifar-10-batches-py"
+path = r"C:/Users/User/Desktop/cifar-10-batches-py"
 
 train_images = []
 train_labels = []
@@ -40,75 +47,115 @@ X_test = X_test.astype("float32") / 255.0
 y_train = to_categorical(y_train, 10)
 y_test = to_categorical(y_test, 10)
 
+weight_decay = 5e-4
+epochs = 50
+batch_size = 128
+train_size = int(len(X_train) * 0.8)
+
 data_augmentation = models.Sequential([
     layers.RandomFlip("horizontal"),
-    layers.RandomRotation(0.08),
-    layers.RandomZoom(0.1),
-    layers.RandomTranslation(0.1, 0.1)
+    layers.RandomTranslation(0.10, 0.10),
+    layers.RandomZoom(0.10),
+    layers.RandomRotation(0.05),
+    layers.RandomContrast(0.10),
 ])
 
-model = models.Sequential([
-    layers.Input(shape=(32, 32, 3)),
-    data_augmentation,
+def residual_block(x, filters, downsample=False):
+    shortcut = x
+    stride = 2 if downsample else 1
 
-    layers.Conv2D(32, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.Conv2D(32, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.MaxPooling2D((2, 2)),
-    layers.Dropout(0.25),
+    x = layers.Conv2D(
+        filters,
+        3,
+        strides=stride,
+        padding="same",
+        use_bias=False,
+        kernel_regularizer=regularizers.l2(weight_decay)
+    )(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation("relu")(x)
 
-    layers.Conv2D(64, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.Conv2D(64, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.MaxPooling2D((2, 2)),
-    layers.Dropout(0.30),
+    x = layers.Conv2D(
+        filters,
+        3,
+        padding="same",
+        use_bias=False,
+        kernel_regularizer=regularizers.l2(weight_decay)
+    )(x)
+    x = layers.BatchNormalization()(x)
 
-    layers.Conv2D(128, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.Conv2D(128, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.MaxPooling2D((2, 2)),
-    layers.Dropout(0.40),
+    if downsample or shortcut.shape[-1] != filters:
+        shortcut = layers.Conv2D(
+            filters,
+            1,
+            strides=stride,
+            padding="same",
+            use_bias=False,
+            kernel_regularizer=regularizers.l2(weight_decay)
+        )(shortcut)
+        shortcut = layers.BatchNormalization()(shortcut)
 
-    layers.Conv2D(256, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.Conv2D(256, (3, 3), padding="same", activation="relu"),
-    layers.BatchNormalization(),
-    layers.GlobalAveragePooling2D(),
+    x = layers.Add()([x, shortcut])
+    x = layers.Activation("relu")(x)
 
-    layers.Dense(256, activation="relu"),
-    layers.BatchNormalization(),
-    layers.Dropout(0.5),
+    return x
 
-    layers.Dense(10, activation="softmax")
-])
+inputs = layers.Input(shape=(32, 32, 3))
+
+x = data_augmentation(inputs)
+
+x = layers.Conv2D(
+    64,
+    3,
+    padding="same",
+    use_bias=False,
+    kernel_regularizer=regularizers.l2(weight_decay)
+)(x)
+x = layers.BatchNormalization()(x)
+x = layers.Activation("relu")(x)
+
+x = residual_block(x, 64)
+x = residual_block(x, 64)
+
+x = residual_block(x, 128, downsample=True)
+x = residual_block(x, 128)
+
+x = residual_block(x, 256, downsample=True)
+x = residual_block(x, 256)
+
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dropout(0.25)(x)
+
+outputs = layers.Dense(
+    10,
+    activation="softmax",
+    kernel_regularizer=regularizers.l2(weight_decay)
+)(x)
+
+model = models.Model(inputs, outputs)
+
+lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+    initial_learning_rate=0.001,
+    decay_steps=epochs * (train_size // batch_size),
+    alpha=0.01
+)
+
+optimizer = tf.keras.optimizers.AdamW(
+    learning_rate=lr_schedule,
+    weight_decay=weight_decay
+)
 
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-    loss="categorical_crossentropy",
+    optimizer=optimizer,
+    loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
     metrics=["accuracy"]
 )
 
 model.summary()
 
 callbacks = [
-    EarlyStopping(
-        monitor="val_loss",
-        patience=8,
-        restore_best_weights=True
-    ),
-
-    ReduceLROnPlateau(
-        monitor="val_loss",
-        factor=0.5,
-        patience=3,
-        min_lr=0.00001
-    ),
-
     ModelCheckpoint(
-        "best_cifar10_augmented_model.h5",
+        "best_resnet_cifar10.keras",
         monitor="val_accuracy",
         save_best_only=True
     )
@@ -117,8 +164,8 @@ callbacks = [
 history = model.fit(
     X_train,
     y_train,
-    epochs=50,
-    batch_size=32,
+    epochs=epochs,
+    batch_size=batch_size,
     validation_split=0.2,
     callbacks=callbacks
 )
@@ -144,4 +191,4 @@ plt.ylabel("Loss")
 plt.legend()
 plt.show()
 
-model.save("final_cifar10_augmented_model2.h5")
+model.save("final_resnet_cifar10.keras")
